@@ -7,8 +7,6 @@ Original file is located at
     https://colab.research.google.com/drive/1h87Tdw6pgSaqOcrZPPjHrv_qm-g9LB1a
 """
 
-!pip install streamlit pyvis pyalex pandas
-
 import streamlit as st
 import streamlit.components.v1 as components
 import os
