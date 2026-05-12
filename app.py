@@ -12,14 +12,8 @@ import streamlit.components.v1 as components
 import os
 from network_builder import generate_clustered_map
 
-# Configure overall page layout and metadata
-st.set_page_config(
-    page_title="Research Network Mapper",
-    page_icon="🌐",
-    layout="wide"
-)
+st.set_page_config(page_title="Research Network Mapper", page_icon="🌐", layout="wide")
 
-# Custom minimal styling to keep the interface polished
 st.markdown("""
     <style>
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }
@@ -29,33 +23,22 @@ st.markdown("""
 st.title("🌐 Dynamic Research Network Mapper")
 st.markdown("Map intersectional collaboration networks using data fetched directly from **OpenAlex**.")
 
-# Initialize dynamic input fields tracking in Streamlit Session State
 if 'author_count' not in st.session_state:
     st.session_state.author_count = 1
 
-# Define storage paths for local output rendering
-OUTPUT_FILE = "network_map.html"
-
-# Sidebar configuration for user inputs
 with st.sidebar:
     st.header("👥 Define Primary Authors")
     st.caption("Add researchers to map their shared collaborative networks.")
-
-    # Render text inputs dynamically based on current session state count
+    
     author_inputs = []
     for i in range(st.session_state.author_count):
-        val = st.text_input(
-            f"Author {i+1}:",
-            placeholder=f"Enter Author {i+1} Name",
-            key=f"input_{i}"
-        )
+        val = st.text_input(f"Author {i+1}:", placeholder=f"Enter Author {i+1} Name", key=f"input_{i}")
         author_inputs.append(val)
-
-    # Stack row manipulation controls cleanly
+        
     if st.button("➕ Add Author", use_container_width=True):
         st.session_state.author_count += 1
-        st.rerun() # Immediately refresh UI to display the appended input field
-
+        st.rerun()
+        
     if st.session_state.author_count > 1:
         if st.button("➖ Remove Last", use_container_width=True):
             st.session_state.author_count -= 1
@@ -64,31 +47,25 @@ with st.sidebar:
     st.divider()
     map_triggered = st.button("🚀 Map Network", type="primary", use_container_width=True)
 
-# Main container logic execution
 if map_triggered:
-    # Filter out empty fields and strip trailing/leading whitespace
     valid_authors = [name.strip() for name in author_inputs if name.strip()]
-
+    
     if not valid_authors:
         st.sidebar.error("⚠️ Please enter at least one valid author name.")
     else:
         with st.spinner("🔍 Querying OpenAlex & building clustered visualization..."):
             try:
-                # Generate graph using imported builder module
-                generate_clustered_map(valid_authors, output_filename=OUTPUT_FILE)
-
-                # Verify output creation and read source code for page injection
-                if os.path.exists(OUTPUT_FILE):
-                    with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
+                # Capture the secure temporary path returned by the backend engine
+                secure_file_path = generate_clustered_map(valid_authors)
+                
+                if secure_file_path and os.path.exists(secure_file_path):
+                    with open(secure_file_path, 'r', encoding='utf-8') as f:
                         html_data = f.read()
-
+                        
                     st.success("✨ Network map generated successfully!")
-
-                    # Embed PyVis graph inside Streamlit workspace bounding box
                     components.html(html_data, height=760, scrolling=False)
-
-                    # Present a native export trigger for standalone web usage
-                    with open(OUTPUT_FILE, 'rb') as f:
+                    
+                    with open(secure_file_path, 'rb') as f:
                         st.download_button(
                             label="📥 Download standalone HTML map",
                             data=f,
@@ -97,10 +74,9 @@ if map_triggered:
                             type="secondary"
                         )
                 else:
-                    st.error("❌ Failed to output graph structure file.")
-
+                    st.error("❌ Failed to read generated map file from secure storage.")
+                    
             except Exception as e:
                 st.error(f"⚠️ An error occurred during graph compilation: {str(e)}")
 else:
-    # Clean initial state instructions presentation
     st.info("👈 Add your primary authors in the sidebar and click **Map Network** to begin exploration.")
