@@ -4,17 +4,14 @@ import tempfile
 from pyvis.network import Network
 from pyalex import Authors, Works, config
 
-# Global OpenAlex Configuration
+# OpenAlex Configuration
 config.email = "jmz2158@cumc.columbia.edu"
 
-# Distinct pre-defined color palette for institutions
 COLOR_PALETTE = [
     "#FF5733", "#33A1FF", "#28B463", "#F1C40F", "#9B59B6", 
     "#E74C3C", "#1ABC9C", "#34495E", "#D35400", "#7D6608", 
     "#1F618D", "#148F77", "#B03A2E", "#7FB3D5", "#C39BD3"
 ]
-
-# Base colors to differentiate the Main Author Hub stars visually
 HUB_COLORS = ["#00ffcc", "#ff00cc", "#ffff00", "#0099ff", "#ff6600", "#ccff00"]
 
 def generate_hex_color():
@@ -28,8 +25,8 @@ def fetch_author_data(author_name):
     inst = author.get('last_known_institution', {}).get('display_name', "Unknown Institution")
     return {"id": author['id'], "name": author['display_name'], "inst": inst}
 
-def generate_legend_free_map(hub_names, output_filename="network_map.html"):
-    """Generates the PyVis map without visible legend boxes but retaining institutional clustering logic."""
+def build_network_map(hub_names, output_filename="network_map.html"):
+    """Builds the secure PyVis map with hidden institutional clustering and NO legend overlay."""
     hubs = []
     for i, name in enumerate(hub_names):
         data = fetch_author_data(name)
@@ -69,7 +66,6 @@ def generate_legend_free_map(hub_names, output_filename="network_map.html"):
 
     net = Network(height='750px', width='100%', bgcolor='#111111', font_color='white', cdn_resources='remote')
     
-    # Custom physics configuration to enable structural clustering
     net.set_options("""
     var options = {
       "physics": {
@@ -89,11 +85,11 @@ def generate_legend_free_map(hub_names, output_filename="network_map.html"):
     }
     """)
 
-    # 1. Add Main Author Hub Nodes
+    # Add Primary Hubs
     for i, hub in enumerate(hubs):
         net.add_node(hub['name'], label=hub['name'], color=hub['color'], size=45, shape="star", title=f"Author {i+1}: {hub['name']}")
 
-    # Direct collaboration check
+    # Check direct hub collaborations
     for i in range(len(hubs)):
         for j in range(i + 1, len(hubs)):
             hub_a, hub_b = hubs[i], hubs[j]
@@ -102,18 +98,11 @@ def generate_legend_free_map(hub_names, output_filename="network_map.html"):
             if shared_count > 0:
                 net.add_edge(hub_a['name'], hub_b['name'], color="#ffffff", value=shared_count)
 
-    # 2. Add INVISIBLE Institutional Anchor Nodes (Keep physics, hide visual clutter)
+    # Add INVISIBLE institutional anchors
     for inst in unique_institutions:
-        inst_node_id = f"INST_{inst}"
-        net.add_node(
-            inst_node_id, 
-            label="", # Strip label text
-            hidden=True, # entirely invisible to the renderer
-            size=1,
-            shape="dot"
-        )
+        net.add_node(f"INST_{inst}", label="", hidden=True, size=1, shape="dot")
 
-    # 3. Add Co-author Nodes & Wire Connections
+    # Add Co-authors
     for coauthor, counts_per_hub in coauthor_counts.items():
         total_count = sum(counts_per_hub.values())
         connected_hubs = list(counts_per_hub.keys())
@@ -125,33 +114,21 @@ def generate_legend_free_map(hub_names, output_filename="network_map.html"):
         border_width = 3 if is_shared else 1
         border_color = "#ffffff" if is_shared else node_color
 
-        # Build clean multi-line hover tooltips
         connections_text = "\n".join([f"  • with {h}: {c} papers" for h, c in counts_per_hub.items()])
         title_text = f"Co-author: {coauthor}\nInstitution: {inst}\nConnections:\n{connections_text}"
 
-        net.add_node(
-            coauthor, 
-            label=coauthor, 
-            color={"background": node_color, "border": border_color},
-            borderWidth=border_width,
-            size=node_size, 
-            shape="dot",
-            title=title_text
-        )
+        net.add_node(coauthor, label=coauthor, color={"background": node_color, "border": border_color},
+                     borderWidth=border_width, size=node_size, shape="dot", title=title_text)
         
-        # Visible collaboration rays
         for hub_name, count in counts_per_hub.items():
             h_color = next(h['color'] for h in hubs if h['name'] == hub_name)
             rgb = tuple(int(h_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
-            edge_color = f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.35)"
-            
-            net.add_edge(hub_name, coauthor, color=edge_color, value=count)
+            net.add_edge(hub_name, coauthor, color=f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.35)", value=count)
 
-        # Invisible spatial layout tether connecting author to invisible university anchor
-        inst_node_id = f"INST_{inst}"
-        net.add_edge(coauthor, inst_node_id, color="rgba(0,0,0,0)", length=20) # 0 opacity transparent edge
+        # Transparent spatial clustering tethers
+        net.add_edge(coauthor, f"INST_{inst}", color="rgba(0,0,0,0)", length=20)
 
-    # Save initial legend-free graph securely using temp structure for cloud write access
+    # Secure write using temp storage
     temp_dir = tempfile.gettempdir()
     secure_output_path = os.path.join(temp_dir, output_filename)
     net.save_graph(secure_output_path)
