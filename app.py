@@ -1,7 +1,9 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import os
-from network_builder import generate_clustered_map
+
+# Import the standardized function name to prevent ImportError crashes
+from network_builder import build_network_map
 
 st.set_page_config(page_title="Research Network Mapper", page_icon="🌐", layout="wide")
 
@@ -44,10 +46,10 @@ if map_triggered:
     if not valid_authors:
         st.sidebar.error("⚠️ Please enter at least one valid author name.")
     else:
-        with st.spinner("🔍 Querying OpenAlex & building clustered visualization..."):
+        with st.spinner("🔍 Querying OpenAlex & building visualization..."):
             try:
-                # Capture the secure temporary path returned by the backend engine
-                secure_file_path = generate_clustered_map(valid_authors)
+                # Execute the matched backend function securely
+                secure_file_path = build_network_map(valid_authors)
                 
                 if secure_file_path and os.path.exists(secure_file_path):
                     with open(secure_file_path, 'r', encoding='utf-8') as f:
@@ -60,7 +62,7 @@ if map_triggered:
                         st.download_button(
                             label="📥 Download standalone HTML map",
                             data=f,
-                            file_name="clustered_research_network.html",
+                            file_name="research_network.html",
                             mime="text/html",
                             type="secondary"
                         )
