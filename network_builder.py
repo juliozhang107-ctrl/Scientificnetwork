@@ -8,29 +8,24 @@ Original file is located at
 """
 
 import random
+import os
+import tempfile
 from pyvis.network import Network
 from pyalex import Authors, Works, config
 
-# Global OpenAlex Configuration
-# Using a registered email places you in the polite pool for faster API responses
 config.email = "jmz2158@cumc.columbia.edu"
 
-# Distinct pre-defined color palette for institutions
 COLOR_PALETTE = [
-    "#FF5733", "#33A1FF", "#28B463", "#F1C40F", "#9B59B6",
-    "#E74C3C", "#1ABC9C", "#34495E", "#D35400", "#7D6608",
+    "#FF5733", "#33A1FF", "#28B463", "#F1C40F", "#9B59B6", 
+    "#E74C3C", "#1ABC9C", "#34495E", "#D35400", "#7D6608", 
     "#1F618D", "#148F77", "#B03A2E", "#7FB3D5", "#C39BD3"
 ]
-
-# Base colors to differentiate the Main Author Hub stars visually
 HUB_COLORS = ["#00ffcc", "#ff00cc", "#ffff00", "#0099ff", "#ff6600", "#ccff00"]
 
 def generate_hex_color():
-    """Generates a random fallback hex color for institutions beyond the base palette."""
     return "#" + "".join([random.choice("0123456789ABCDEF") for _ in range(6)])
 
 def fetch_author_data(author_name):
-    """Queries OpenAlex to validate an author and retrieve their ID and primary institution."""
     results = Authors().search(author_name).get()
     if not results:
         return None
@@ -38,56 +33,79 @@ def fetch_author_data(author_name):
     inst = author.get('last_known_institution', {}).get('display_name', "Unknown Institution")
     return {"id": author['id'], "name": author['display_name'], "inst": inst}
 
-def generate_clustered_map(hub_names, output_filename="network_map.html"):
-    """
-    Core engine: Fetches works for all requested hubs, maps co-authors,
-    applies hidden institutional clustering physics, and outputs the PyVis HTML map.
-    """
-    # --- STEP 1: Validate and Fetch Main Authors ---
+def generate_clustered_map(hub_names):
+    """Generates the PyVis map securely inside the system's temporary directory."""
     hubs = []
     for i, name in enumerate(hub_names):
         data = fetch_author_data(name)
         if data:
-            # Assign a consistent visual color to each hub star
             data['color'] = HUB_COLORS[i % len(HUB_COLORS)]
             hubs.append(data)
 
     if not hubs:
         raise ValueError("None of the requested authors could be found on OpenAlex.")
 
-    # --- STEP 2: Extract Works & Track Collaboration Frequencies ---
     hub_names_set = {h['name'] for h in hubs}
-    coauthor_counts = {} # Maps coauthor_name -> {hub_name: count}
-    institution_map = {} # Maps coauthor_name -> Institution Name
+    coauthor_counts = {}
+    institution_map = {}
 
     for hub in hubs:
-        # Fetch all works for this specific author hub
         works = Works().filter(author={"id": hub['id']}).get()
         for work in works:
             for a in work.get('authorships', []):
                 co_name = a['author']['display_name']
-                # Skip if the co-author is the current hub author
-                if a['author']['id'] == hub['id']:
-                    continue
-
-                # Initialize tracking dictionaries
+                if a['author']['id'] == hub['id']: continue
+                
                 if co_name not in coauthor_counts:
                     coauthor_counts[co_name] = {}
-
-                # Increment shared paper count for this specific hub
                 coauthor_counts[co_name][hub['name']] = coauthor_counts[co_name].get(hub['name'], 0) + 1
-
-                # Map primary institution affiliation
+                
                 if co_name not in institution_map:
                     inst_list = a.get('institutions', [])
                     institution_map[co_name] = inst_list[0]['display_name'] if inst_list else "No Affiliation Listed"
 
-    # Remove main hubs from the co-author nodes pool if they cross-collaborated directly
     for h_name in hub_names_set:
         coauthor_counts.pop(h_name, None)
 
-    # --- STEP 3: Assign Distinct Colors to Unique Institutions ---
     unique_institutions = list(set(institution_map.values()))
     inst_color_dict = {}
     for i, inst in enumerate(unique_institutions):
         inst_color_dict[inst] = COLOR_PALETTE[i] if i < len(COLOR_PALETTE) else generate_hex_color()
+
+    net = Network(height='750px', width='100%', bgcolor='#111111', font_color='white', cdn_resources='remote')
+    
+    net.set_options("""
+    var options = {
+      "physics": {
+        "forceAtlas2Based": {
+          "gravitationalConstant": -40,
+          "centralGravity": 0.01,
+          "springLength": 70,
+          "springConstant": 0.06,
+          "damping": 0.4,
+          "avoidOverlap": 0.25
+        },
+        "maxVelocity": 40,
+        "solver": "forceAtlas2Based",
+        "timestep": 0.35,
+        "stabilization": {"iterations": 150}
+      }
+    }
+    """)
+
+    for i, hub in enumerate(hubs):
+        net.add_node(hub['name'], label=hub['name'], color=hub['color'], size=45, shape="star", title=f"Author {i+1}: {hub['name']}")
+
+    for i in range(len(hubs)):
+        for j in range(i + 1, len(hubs)):
+            hub_a, hub_b = hubs[i], hubs[j]
+            works_a = Works().filter(author={"id": hub_a['id']}).get()
+            shared_count = sum(1 for w in works_a if hub_b['id'] in [a['author']['id'] for a in w.get('authorships', [])])
+            if shared_count > 0:
+                net.add_edge(hub_a['name'], hub_b['name'], color="#ffffff", value=shared_count)
+
+    for inst in unique_institutions:
+        net.add_node(f"INST_{inst}", label="", hidden=True, size=1, shape="dot")
+
+    for coauthor, counts_per_hub in coauthor_counts.items():
+        total_count = sum(
