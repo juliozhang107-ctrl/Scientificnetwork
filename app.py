@@ -14,7 +14,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🌐 Dynamic Research Network Mapper")
-st.markdown("Map intersectional collaboration networks using data fetched directly from **OpenAlex**.")
+st.markdown("Map intersectional collaboration networks made by Julio Zhang")
 
 if 'author_count' not in st.session_state:
     st.session_state.author_count = 1
