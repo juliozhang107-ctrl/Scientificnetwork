@@ -4,7 +4,6 @@ import tempfile
 from pyvis.network import Network
 from pyalex import Authors, Works, config
 
-# OpenAlex Configuration
 config.email = "jmz2158@cumc.columbia.edu"
 
 COLOR_PALETTE = [
@@ -12,7 +11,7 @@ COLOR_PALETTE = [
     "#E74C3C", "#1ABC9C", "#34495E", "#D35400", "#7D6608", 
     "#1F618D", "#148F77", "#B03A2E", "#7FB3D5", "#C39BD3"
 ]
-HUB_COLORS = ["#00ffcc", "#ff00cc", "#ffff00", "#0099ff", "#ff6600", "#ccff00"]
+HUB_COLORS = ["#00ffcc", "#ff00cc", "#ffff00", "#0099ff", "#ff6600", "#ccff00", "#33ccff", "#ff3366"]
 
 def generate_hex_color():
     return "#" + "".join([random.choice("0123456789ABCDEF") for _ in range(6)])
@@ -26,7 +25,7 @@ def fetch_author_data(author_name):
     return {"id": author['id'], "name": author['display_name'], "inst": inst}
 
 def build_network_map(hub_names, output_filename="network_map.html"):
-    """Builds the secure PyVis map with hidden institutional clustering and NO legend overlay."""
+    """Builds an interactive PyVis map capable of recursive expansion tracking."""
     hubs = []
     for i, name in enumerate(hub_names):
         data = fetch_author_data(name)
@@ -41,6 +40,7 @@ def build_network_map(hub_names, output_filename="network_map.html"):
     coauthor_counts = {}
     institution_map = {}
 
+    # Extract works for all active hubs in the state array
     for hub in hubs:
         works = Works().filter(author={"id": hub['id']}).get()
         for work in works:
@@ -64,32 +64,38 @@ def build_network_map(hub_names, output_filename="network_map.html"):
     for i, inst in enumerate(unique_institutions):
         inst_color_dict[inst] = COLOR_PALETTE[i] if i < len(COLOR_PALETTE) else generate_hex_color()
 
-    net = Network(height='750px', width='100%', bgcolor='#111111', font_color='white', cdn_resources='remote')
+    # Enable interaction selections and configuration parameters
+    net = Network(height='750px', width='100%', bgcolor='#111111', font_color='white', cdn_resources='remote', select_menu=True)
     
     net.set_options("""
     var options = {
       "physics": {
         "forceAtlas2Based": {
-          "gravitationalConstant": -50,
+          "gravitationalConstant": -45,
           "centralGravity": 0.01,
-          "springLength": 60,
+          "springLength": 65,
           "springConstant": 0.08,
           "damping": 0.4,
-          "avoidOverlap": 0.2
+          "avoidOverlap": 0.25
         },
         "maxVelocity": 40,
         "solver": "forceAtlas2Based",
         "timestep": 0.35,
         "stabilization": {"iterations": 150}
+      },
+      "interaction": {
+        "hover": true,
+        "selectConnectedEdges": true
       }
     }
     """)
 
-    # Add Primary Hubs
+    # 1. Add Active Target Hubs
     for i, hub in enumerate(hubs):
-        net.add_node(hub['name'], label=hub['name'], color=hub['color'], size=45, shape="star", title=f"Author {i+1}: {hub['name']}")
+        net.add_node(hub['name'], label=hub['name'], color=hub['color'], size=45, shape="star", 
+                     title=f"⭐ Primary Hub: {hub['name']}\nAffiliation: {hub['inst']}")
 
-    # Check direct hub collaborations
+    # Check direct hub cross-collaborations
     for i in range(len(hubs)):
         for j in range(i + 1, len(hubs)):
             hub_a, hub_b = hubs[i], hubs[j]
@@ -98,11 +104,11 @@ def build_network_map(hub_names, output_filename="network_map.html"):
             if shared_count > 0:
                 net.add_edge(hub_a['name'], hub_b['name'], color="#ffffff", value=shared_count)
 
-    # Add INVISIBLE institutional anchors
+    # 2. Add INVISIBLE institutional grouping nodes
     for inst in unique_institutions:
         net.add_node(f"INST_{inst}", label="", hidden=True, size=1, shape="dot")
 
-    # Add Co-authors
+    # 3. Add Co-authors
     for coauthor, counts_per_hub in coauthor_counts.items():
         total_count = sum(counts_per_hub.values())
         connected_hubs = list(counts_per_hub.keys())
@@ -115,7 +121,7 @@ def build_network_map(hub_names, output_filename="network_map.html"):
         border_color = "#ffffff" if is_shared else node_color
 
         connections_text = "\n".join([f"  • with {h}: {c} papers" for h, c in counts_per_hub.items()])
-        title_text = f"Co-author: {coauthor}\nInstitution: {inst}\nConnections:\n{connections_text}"
+        title_text = f"Co-author: {coauthor}\nInstitution: {inst}\nConnections:\n{connections_text}\n\n💡 Select this author in the dashboard to expand their network!"
 
         net.add_node(coauthor, label=coauthor, color={"background": node_color, "border": border_color},
                      borderWidth=border_width, size=node_size, shape="dot", title=title_text)
@@ -125,12 +131,12 @@ def build_network_map(hub_names, output_filename="network_map.html"):
             rgb = tuple(int(h_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
             net.add_edge(hub_name, coauthor, color=f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.35)", value=count)
 
-        # Transparent spatial clustering tethers
         net.add_edge(coauthor, f"INST_{inst}", color="rgba(0,0,0,0)", length=20)
 
-    # Secure write using temp storage
+    # Return valid dynamic mapping targets alongside complete output file strings
     temp_dir = tempfile.gettempdir()
     secure_output_path = os.path.join(temp_dir, output_filename)
     net.save_graph(secure_output_path)
     
-    return secure_output_path
+    # Return both the filepath and the list of generated co-authors so the frontend UI can populate an expansion menu
+    return secure_output_path, list(coauthor_counts.keys())
